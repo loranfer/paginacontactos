@@ -1,4 +1,4 @@
-const urlApi = 'https://script.google.com/macros/s/AKfycbxfgVF2jS07FgjMU4Y3J6pnX4A_yVRI4E8I9MbejsqUMXuS064GxundZocdQsexXik/exec'; 
+const urlApi = 'https://script.google.com/macros/s/AKfycbxfgVF2jS07FgjMU4Y3J6pnX4A_yVRI4E8I9MbejsqUMXuS064GxundZocdQsexXik/exec';
 const offsetFilas = 1;
 
 function formatearFecha(fechaStr) {
@@ -16,47 +16,32 @@ function formatearSoloFecha(fechaStr) {
   return f.toLocaleDateString('es-ES');
 }
 
-// Actualiza datos de fila por ID
+// NOTA: La función actualizarFila se deja pero **NO** se usa para Prioridad o Notas para evitar CORS
+// Puedes usarla en casos donde estés seguro del contexto y dominio
 async function actualizarFila(id, datos) {
   try {
-    // Crear un objeto que incluya el ID y los datos del formulario
     const datosConId = { ...datos, ID: id };
-
-    // Enviar los datos como JSON
     const response = await fetch(urlApi, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json' // Especificar que se envía JSON
-      },
-      body: JSON.stringify({
-        action: 'saveFormData', // Acción que se está realizando
-        ...datosConId // Incluir los datos del formulario
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'saveFormData', ...datosConId })
     });
-
-    // Verificar si la respuesta fue exitosa
     if (!response.ok) {
-      const errorText = await response.text(); // Obtener el texto de error
+      const errorText = await response.text();
       throw new Error(`Error HTTP: ${response.status} - ${errorText}`);
     }
-
-    // Parsear la respuesta JSON
     const result = await response.json();
-    
-    // Verificar el estado de la respuesta
     if (result.status !== 'success') {
       throw new Error(result.message || 'Error al actualizar fila');
     }
-
-    return result; // Retornar el resultado exitoso
+    return result;
   } catch (e) {
     console.error('Error al actualizar fila:', e);
-    throw new Error('Error al actualizar fila: ' + e.message); // Lanzar error con mensaje
+    throw new Error('Error al actualizar fila: ' + e.message);
   }
 }
 
-
-// Obtiene datos fila por ID
+// Obtener fila por ID
 async function obtenerFilaPorId(id) {
   try {
     const response = await fetch(`${urlApi}?id=${encodeURIComponent(id)}`);
@@ -69,37 +54,35 @@ async function obtenerFilaPorId(id) {
   }
 }
 
-// Marca campo Llamado con id y valor ("si" o "no")
+// Marca un campo simple usando querystring sin body JSON para evitar CORS
+async function marcarCampo(campo, id, valor) {
+  try {
+    const valorNorm = String(valor).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const response = await fetch(`${urlApi}?marcar=${encodeURIComponent(campo + ':' + id + ':' + valorNorm)}`, {
+      method: 'POST',
+    });
+    const result = await response.json();
+    if (result.status !== 'success') throw new Error(result.message || `Error al marcar ${campo}`);
+    return result;
+  } catch (e) {
+    console.error(`Error al marcar ${campo}:`, e);
+    throw e;
+  }
+}
+
 async function marcarLlamado(id, valor) {
-  try {
-    const response = await fetch(`${urlApi}?marcar=Llamado:${encodeURIComponent(id)}:${valor.toLowerCase()}`, {
-      method: 'POST',
-    });
-    const result = await response.json();
-    if (result.status !== 'success') throw new Error(result.message || 'Error al marcar Llamado');
-    return result;
-  } catch (e) {
-    console.error('Error al marcar Llamado:', e);
-    throw e;
-  }
+  return marcarCampo("Llamado", id, valor);
 }
 
-// Marca campo Respondido con id y valor ("si" o "no")
 async function marcarRespondido(id, valor) {
-  try {
-    const response = await fetch(`${urlApi}?marcar=Respondido:${encodeURIComponent(id)}:${valor.toLowerCase()}`, {
-      method: 'POST',
-    });
-    const result = await response.json();
-    if (result.status !== 'success') throw new Error(result.message || 'Error al marcar Respondido');
-    return result;
-  } catch (e) {
-    console.error('Error al marcar Respondido:', e);
-    throw e;
-  }
+  return marcarCampo("Respondido", id, valor);
 }
 
-// Crear botón genérico (reutilizable)
+async function marcarNotas(id, notas) {
+  return marcarCampo("Notas", id, notas);
+}
+
+// Crear botón genérico reutilizable
 function crearBoton({ fondo, borde, textoColor, texto, extra = {}, onClick }) {
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -120,7 +103,7 @@ function crearBoton({ fondo, borde, textoColor, texto, extra = {}, onClick }) {
   return btn;
 }
 
-// Crear botón Llamado con toggle "Sí"/"No"
+// Botón Llamado toggle Sí/No
 function crearBotonLlamado(id, estado) {
   const colorRojo = '#f28b82', bordeRojo = '#d9534f';
   const colorVerde = '#81c995', bordeVerde = '#4cae4c';
@@ -134,53 +117,43 @@ function crearBotonLlamado(id, estado) {
     onClick: async function () {
       const textoActual = this.innerText.trim();
       const nuevoEstado = textoActual === 'Sí' ? 'No' : 'Sí';
-
       const nuevoEstadoNormalized = nuevoEstado.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
       this.disabled = true;
       this.innerHTML = `<div class="spinner-border spinner-border-sm text-warning" role="status"><span class="visually-hidden">Cargando...</span></div>`;
 
-     try {
-  // Actualiza solo el campo Llamado, sin modificar Respondido
-  await marcarLlamado(id, nuevoEstadoNormalized);
+      try {
+        await marcarLlamado(id, nuevoEstadoNormalized);
 
-  // Obtener datos actualizados
-  const filaData = await obtenerFilaPorId(id);
-  const tr = document.querySelector(`tr[data-id="${id}"]`);
-  if (!tr) return;
+        const filaData = await obtenerFilaPorId(id);
+        const tr = document.querySelector(`tr[data-id="${id}"]`);
+        if (!tr) return;
 
-  // Actualiza botón Llamado
-  const tdLlamado = tr.querySelector('.td-llamado');
-  tdLlamado.innerHTML = '';
-  tdLlamado.appendChild(crearBotonLlamado(id, filaData['Llamado']));
+        const tdLlamado = tr.querySelector('.td-llamado');
+        tdLlamado.innerHTML = '';
+        tdLlamado.appendChild(crearBotonLlamado(id, filaData['Llamado']));
 
-  // En vez de botón Respondido normal, mostrar opciones para elegir Sí o No
-  const tdRespondido = tr.querySelector('.td-respondido');
-  mostrarOpcionesRespondido(tdRespondido, id);
+        const tdRespondido = tr.querySelector('.td-respondido');
+        mostrarOpcionesRespondido(tdRespondido, id);
 
-  // Actualiza botón Seguimiento
-  const tdSeguimiento = tr.querySelector('.td-seguimiento');
-  tdSeguimiento.innerHTML = '';
-  tdSeguimiento.appendChild(crearBotonSeguimiento(id, filaData['Respondido'], filaData['NoContestados']));
+        const tdSeguimiento = tr.querySelector('.td-seguimiento');
+        tdSeguimiento.innerHTML = '';
+        tdSeguimiento.appendChild(crearBotonSeguimiento(id, filaData['Respondido'], filaData['NoContestados']));
 
-  // Actualiza texto Estado
-  const tdEstado = tr.querySelector('.td-estado');
-  tdEstado.textContent = filaData['Estado'] || 'Pendiente';
+        const tdEstado = tr.querySelector('.td-estado');
+        tdEstado.textContent = filaData['Estado'] || 'Pendiente';
 
-  this.disabled = false;
-} catch (e) {
-  this.innerText = textoActual;
-  this.disabled = false;
-  alert('Error al marcar Llamado: ' + e.message);
-}
-
+        this.disabled = false;
+      } catch (e) {
+        this.innerText = textoActual;
+        this.disabled = false;
+        alert('Error al marcar Llamado: ' + e.message);
+      }
     }
   });
   return btn;
-
 }
 
-// Crear botón Respondido que muestra opciones "Sí"/"No"
+// Botón Respondido tipo toggle con opciones Sí/No
 function crearBotonRespondido(id, estado) {
   const tr = document.querySelector(`tr[data-id="${id}"]`);
   const td = tr?.querySelector('.td-respondido');
@@ -227,16 +200,13 @@ function mostrarOpcionesRespondido(td, id) {
       tdRespondido.appendChild(crearBotonRespondido(id, valor));
 
       try {
-        // Normaliza valor (sin tilde, minúsculas)
         const valorNorm = valor.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
         await marcarRespondido(id, valorNorm);
 
         if (valorNorm === 'si') {
           await marcarLlamado(id, 'si');
         }
 
-        // Recargar botones y estados
         const filaData = await obtenerFilaPorId(id);
 
         tdLlamado.innerHTML = '';
@@ -258,6 +228,7 @@ function mostrarOpcionesRespondido(td, id) {
   td.appendChild(contenedor);
 }
 
+// Botón Prioridad con estrellas (usa marcarCampo para actualizar)
 function crearBotonPrioridad(id, prioridad) {
   const niveles = ['Baja', 'Media', 'Alta'];
   const prioridadNormal = normalizarPrioridad(prioridad);
@@ -272,7 +243,6 @@ function crearBotonPrioridad(id, prioridad) {
 
   const estrellas = [];
 
-  // Función para pintar el hover en cadena
   function pintarHover(idx) {
     estrellas.forEach((estrella, i) => {
       if (i <= idx) {
@@ -285,7 +255,6 @@ function crearBotonPrioridad(id, prioridad) {
     });
   }
 
-  // Función para pintar estado normal (sin hover)
   function pintarNormal() {
     estrellas.forEach((estrella, i) => {
       estrella.style.color = estrella.classList.contains('activa') ? '#ffc107' : '#ccc';
@@ -301,33 +270,28 @@ function crearBotonPrioridad(id, prioridad) {
     estrella.style.fontSize = '1.7em';
     estrella.style.cursor = 'pointer';
 
-    estrella.addEventListener('mouseenter', () => {
-      pintarHover(i);
-    });
-    estrella.addEventListener('mouseleave', () => {
-      pintarNormal();
-    });
+    estrella.addEventListener('mouseenter', () => pintarHover(i));
+    estrella.addEventListener('mouseleave', () => pintarNormal());
 
     estrella.addEventListener('click', async () => {
-  try {
-    // LLAMADA CORRECTA A marcarCampo:
-    await marcarCampo("Prioridad", id, niveles[i]);
+      try {
+        await marcarCampo("Prioridad", id, niveles[i]);
 
-    const filaData = await obtenerFilaPorId(id);
-    const tr = document.querySelector(`tr[data-id="${id}"]`);
-    if (!tr) return;
+        const filaData = await obtenerFilaPorId(id);
+        const tr = document.querySelector(`tr[data-id="${id}"]`);
+        if (!tr) return;
 
-    const tdPrioridad = tr.querySelector('.td-prioridad');
-    tdPrioridad.innerHTML = '';
-    tdPrioridad.appendChild(crearBotonPrioridad(id, filaData['Prioridad']));
+        const tdPrioridad = tr.querySelector('.td-prioridad');
+        tdPrioridad.innerHTML = '';
+        tdPrioridad.appendChild(crearBotonPrioridad(id, filaData['Prioridad']));
 
-    const tdEstado = tr.querySelector('.td-estado');
-    tdEstado.textContent = filaData['Estado'] || 'Pendiente';
-  } catch (e) {
-    alert('Error al actualizar Prioridad: ' + e.message);
-  }
-});
+        const tdEstado = tr.querySelector('.td-estado');
+        tdEstado.textContent = filaData['Estado'] || 'Pendiente';
 
+      } catch (e) {
+        alert('Error al actualizar Prioridad: ' + e.message);
+      }
+    });
 
     estrellas.push(estrella);
     contenedor.appendChild(estrella);
@@ -338,7 +302,6 @@ function crearBotonPrioridad(id, prioridad) {
   return contenedor;
 }
 
-// Función que normaliza prioridad (si no la tienes copiada)
 function normalizarPrioridad(p) {
   if (!p) return 'Media';
   p = p.trim().toLowerCase();
@@ -349,26 +312,24 @@ function normalizarPrioridad(p) {
 }
 
 
-
-
+// Botón Seguimiento con emojis y contador
 function crearBotonSeguimiento(id, respondido, noContestados) {
   const esRespondido = respondido === 'Sí';
 
   const span = document.createElement('span');
   span.style.cursor = 'pointer';
-  span.style.fontSize = '1em';               // Tamaño general un poco más pequeño
+  span.style.fontSize = '1em';
   span.style.userSelect = 'none';
   span.style.color = '#333';
-  span.style.display = 'inline-flex';        // Para alinear emoji y número en la misma fila
+  span.style.display = 'inline-flex';
   span.style.alignItems = 'center';
-  span.style.gap = '0.15em';                  // Pequeño espacio entre emoji y número
+  span.style.gap = '0.15em';
   span.style.padding = '2px 4px';
   span.style.borderRadius = '4px';
 
-  // Crear el emoji en un span separado para poder ajustar tamaño si quieres
   const emojiSpan = document.createElement('span');
   emojiSpan.textContent = esRespondido ? '😊' : '😢';
-  emojiSpan.style.fontSize = '1.1em';         // Emoji un poco más grande que el número
+  emojiSpan.style.fontSize = '1.1em';
   emojiSpan.style.lineHeight = '1';
 
   span.appendChild(emojiSpan);
@@ -376,16 +337,14 @@ function crearBotonSeguimiento(id, respondido, noContestados) {
   if (!esRespondido) {
     const numeroSpan = document.createElement('span');
     numeroSpan.textContent = `(${noContestados || 0})`;
-    numeroSpan.style.fontSize = '0.85em';      // Número más pequeño que emoji
+    numeroSpan.style.fontSize = '0.85em';
     numeroSpan.style.lineHeight = '1';
     numeroSpan.style.fontWeight = '500';
     numeroSpan.style.userSelect = 'none';
     span.appendChild(numeroSpan);
   }
 
-  span.title = esRespondido
-    ? 'Respondido'
-    : `${noContestados || 0} no contestados`;
+  span.title = esRespondido ? 'Respondido' : `${noContestados || 0} no contestados`;
 
   span.addEventListener('click', () => {
     const tr = document.querySelector(`tr[data-id="${id}"]`);
@@ -396,9 +355,7 @@ function crearBotonSeguimiento(id, respondido, noContestados) {
   return span;
 }
 
-
-
-// Mostrar opciones Seguimiento (mantén tu código actual)
+// Mostrar opciones Seguimiento para seleccionar 'Sí' o 'No'
 function mostrarOpcionesSeguimiento(td, id) {
   td.innerHTML = '';
   const contenedor = document.createElement('div');
@@ -438,28 +395,12 @@ function mostrarOpcionesSeguimiento(td, id) {
   td.appendChild(contenedor);
 }
 
+
+// Mostrar contactos en tabla
 let contactosData = [];
 let sortColumn = null;
 let sortDirection = 1;
 
-
-async function marcarCampo(campo, id, valor) {
-  try {
-    const response = await fetch(`${urlApi}?marcar=${encodeURIComponent(campo + ':' + id + ':' + valor.toLowerCase())}`, {
-      method: 'POST',
-    });
-    const result = await response.json();
-    if (result.status !== 'success') throw new Error(result.message || `Error al marcar ${campo}`);
-    return result;
-  } catch (e) {
-    console.error(`Error al marcar ${campo}:`, e);
-    throw e;
-  }
-}
-
-
-
-// Mostrar contactos con IDs reales y preparar tabla
 function mostrarContactos(contactos) {
   contactosData = contactos;
   const tbody = document.querySelector('#tabla-contactos tbody');
@@ -471,7 +412,7 @@ function mostrarContactos(contactos) {
     const idPersona = c['ID'] || `contacto_${idx + 1}`;
 
     const tr = document.createElement('tr');
-    tr.dataset.id = idPersona;  // Asigna el ID real como atributo para identificar fila
+    tr.dataset.id = idPersona;
 
     tr.innerHTML = `
       <td style="text-align:left;">${c['your-name'] || ''}</td>
@@ -504,7 +445,6 @@ function mostrarContactos(contactos) {
 
     tbody.appendChild(tr);
 
-    // Crear y añadir botones con ID real
     tr.querySelector('.td-llamado').appendChild(crearBotonLlamado(idPersona, llamado));
     tr.querySelector('.td-respondido').appendChild(crearBotonRespondido(idPersona, respondido));
     tr.querySelector('.td-seguimiento').appendChild(crearBotonSeguimiento(idPersona, respondido, c['NoContestados']));
@@ -513,23 +453,23 @@ function mostrarContactos(contactos) {
     const inputNotas = tr.querySelector('.td-notas input');
     const btnGuardarNotas = tr.querySelector('.td-notas button');
 
-    // Listener para guardar notas usando el ID
+    // Cambiado para usar marcarNotas y evitar CORS
     btnGuardarNotas.addEventListener('click', async () => {
-  const notas = inputNotas.value;
-  try {
-    await marcarNotas(idPersona, notas);
+      const notas = inputNotas.value;
+      try {
+        await marcarNotas(idPersona, notas);
 
-    const filaData = await obtenerFilaPorId(idPersona);
-    inputNotas.value = filaData['Notas'] || '';
+        const filaData = await obtenerFilaPorId(idPersona);
+        inputNotas.value = filaData['Notas'] || '';
 
-    const tdEstado = tr.querySelector('.td-estado');
-    tdEstado.textContent = filaData['Estado'] || 'Pendiente';
-  } catch (e) {
-    alert('Error al guardar Notas: ' + e.message);
-  }
-});
+        const tdEstado = tr.querySelector('.td-estado');
+        tdEstado.textContent = filaData['Estado'] || 'Pendiente';
 
-    // Crear fila detalle oculta igual que antes
+      } catch (e) {
+        alert('Error al guardar Notas: ' + e.message);
+      }
+    });
+
     const trDetalle = document.createElement('tr');
     trDetalle.className = 'fila-detalle';
     trDetalle.style.display = 'none';
@@ -559,7 +499,7 @@ function mostrarContactos(contactos) {
   });
 }
 
-// Funciones para cargar datos y mostrar en tabla
+// Cargar contactos desde GAS
 async function cargarContactos() {
   try {
     const response = await fetch(urlApi);
@@ -585,50 +525,47 @@ async function cargarYMostrar() {
 document.addEventListener('DOMContentLoaded', () => {
   cargarYMostrar();
 
- document.querySelectorAll('.sortable').forEach(th => {
-  th.addEventListener('click', () => {
-    const column = th.dataset.sort;
+  document.querySelectorAll('.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const column = th.dataset.sort;
 
-    if (sortColumn === column) {
-      sortDirection *= -1;
-    } else {
-      sortColumn = column;
-      sortDirection = 1;
-    }
-
-    const sortedData = [...contactosData].sort((a, b) => {
-      let valA = a[column] || '';
-      let valB = b[column] || '';
-
-      if (column === 'FechaSeguimiento') {
-        valA = valA ? new Date(valA).getTime() : 0;
-        valB = valB ? new Date(valB).getTime() : 0;
-      } else if (column === 'Prioridad') {
-        const order = { 'Alta': 3, 'Media': 2, 'Baja': 1 };
-        valA = order[valA] || 0;
-        valB = order[valB] || 0;
-      } else if (column === 'Estado') {
-        // Orden personalizado para Estado
-        const orderEstado = { 'Sin Llamar': 1, 'Llamado': 2, 'Respondido': 3 };
-        valA = orderEstado[valA] || 0;
-        valB = orderEstado[valB] || 0;
+      if (sortColumn === column) {
+        sortDirection *= -1;
+      } else {
+        sortColumn = column;
+        sortDirection = 1;
       }
 
-      if (valA < valB) return -1 * sortDirection;
-      if (valA > valB) return 1 * sortDirection;
-      return 0;
-    });
+      const sortedData = [...contactosData].sort((a, b) => {
+        let valA = a[column] || '';
+        let valB = b[column] || '';
 
-    mostrarContactos(sortedData);
+        if (column === 'FechaSeguimiento') {
+          valA = valA ? new Date(valA).getTime() : 0;
+          valB = valB ? new Date(valB).getTime() : 0;
+        } else if (column === 'Prioridad') {
+          const order = { 'Alta': 3, 'Media': 2, 'Baja': 1 };
+          valA = order[valA] || 0;
+          valB = order[valB] || 0;
+        } else if (column === 'Estado') {
+          const orderEstado = { 'Sin Llamar': 1, 'Llamado': 2, 'Respondido': 3 };
+          valA = orderEstado[valA] || 0;
+          valB = orderEstado[valB] || 0;
+        }
 
-    // Actualizar iconos flecha para indicar orden
-    document.querySelectorAll('.sortable').forEach(t => {
-      t.innerHTML = t.innerHTML.replace(' ↑', '').replace(' ↓', '');
+        if (valA < valB) return -1 * sortDirection;
+        if (valA > valB) return 1 * sortDirection;
+        return 0;
+      });
+
+      mostrarContactos(sortedData);
+
+      document.querySelectorAll('.sortable').forEach(t => {
+        t.innerHTML = t.innerHTML.replace(' ↑', '').replace(' ↓', '');
+      });
+      th.innerHTML += sortDirection === 1 ? ' ↑' : ' ↓';
     });
-    th.innerHTML += sortDirection === 1 ? ' ↑' : ' ↓';
   });
-});
-
 
   document.querySelector('#tabla-contactos tbody').addEventListener('click', function(event) {
     const btn = event.target.closest('button[data-toggle="detalle"]');
