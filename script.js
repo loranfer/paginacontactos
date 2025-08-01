@@ -309,23 +309,25 @@ function crearBotonPrioridad(id, prioridad) {
     });
 
     estrella.addEventListener('click', async () => {
-      try {
-        await actualizarFila(id, { "Prioridad": niveles[i] });
-        const filaData = await obtenerFilaPorId(id);
+  try {
+    // LLAMADA CORRECTA A marcarCampo:
+    await marcarCampo("Prioridad", id, niveles[i]);
 
-        const tr = document.querySelector(`tr[data-id="${id}"]`);
-        if (!tr) return;
+    const filaData = await obtenerFilaPorId(id);
+    const tr = document.querySelector(`tr[data-id="${id}"]`);
+    if (!tr) return;
 
-        const tdPrioridad = tr.querySelector('.td-prioridad');
-        tdPrioridad.innerHTML = '';
-        tdPrioridad.appendChild(crearBotonPrioridad(id, filaData['Prioridad']));
+    const tdPrioridad = tr.querySelector('.td-prioridad');
+    tdPrioridad.innerHTML = '';
+    tdPrioridad.appendChild(crearBotonPrioridad(id, filaData['Prioridad']));
 
-        const tdEstado = tr.querySelector('.td-estado');
-        tdEstado.textContent = filaData['Estado'] || 'Pendiente';
-      } catch (e) {
-        alert('Error al actualizar Prioridad: ' + e.message);
-      }
-    });
+    const tdEstado = tr.querySelector('.td-estado');
+    tdEstado.textContent = filaData['Estado'] || 'Pendiente';
+  } catch (e) {
+    alert('Error al actualizar Prioridad: ' + e.message);
+  }
+});
+
 
     estrellas.push(estrella);
     contenedor.appendChild(estrella);
@@ -440,6 +442,23 @@ let contactosData = [];
 let sortColumn = null;
 let sortDirection = 1;
 
+
+async function marcarCampo(campo, id, valor) {
+  try {
+    const response = await fetch(`${urlApi}?marcar=${encodeURIComponent(campo + ':' + id + ':' + valor.toLowerCase())}`, {
+      method: 'POST',
+    });
+    const result = await response.json();
+    if (result.status !== 'success') throw new Error(result.message || `Error al marcar ${campo}`);
+    return result;
+  } catch (e) {
+    console.error(`Error al marcar ${campo}:`, e);
+    throw e;
+  }
+}
+
+
+
 // Mostrar contactos con IDs reales y preparar tabla
 function mostrarContactos(contactos) {
   contactosData = contactos;
@@ -496,19 +515,19 @@ function mostrarContactos(contactos) {
 
     // Listener para guardar notas usando el ID
     btnGuardarNotas.addEventListener('click', async () => {
-      const notas = inputNotas.value;
-      try {
-        await actualizarFila(idPersona, { "Notas": notas });
+  const notas = inputNotas.value;
+  try {
+    await marcarNotas(idPersona, notas);
 
-        const filaData = await obtenerFilaPorId(idPersona);
-        inputNotas.value = filaData['Notas'] || '';
+    const filaData = await obtenerFilaPorId(idPersona);
+    inputNotas.value = filaData['Notas'] || '';
 
-        const tdEstado = tr.querySelector('.td-estado');
-        tdEstado.textContent = filaData['Estado'] || 'Pendiente';
-      } catch (e) {
-        alert('Error al guardar Notas: ' + e.message);
-      }
-    });
+    const tdEstado = tr.querySelector('.td-estado');
+    tdEstado.textContent = filaData['Estado'] || 'Pendiente';
+  } catch (e) {
+    alert('Error al guardar Notas: ' + e.message);
+  }
+});
 
     // Crear fila detalle oculta igual que antes
     const trDetalle = document.createElement('tr');
